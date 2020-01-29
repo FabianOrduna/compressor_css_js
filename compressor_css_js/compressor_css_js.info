@@ -1,0 +1,5 @@
+name = Compressor for css and js
+description = This module helps to compress files in order to increase the render speed of websites
+core = 7.x
+
+configure = admin/config/media/compressor_css_js

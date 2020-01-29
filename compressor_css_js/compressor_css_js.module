@@ -1,0 +1,1164 @@
+<?php
+#module file
+
+#module t
+function compressor_css_js_menu(){
+
+	$items['admin/config/media/compressor_css_js'] = array(
+	    'title' => 'Compressor of css and js files',
+	    'page callback' => 'drupal_get_form',
+	    'page arguments' => array('compressor_css_js_domain_form'),
+	    'access arguments' => array('administer users'),
+	    'type' => MENU_NORMAL_ITEM,
+  	);
+
+  $items['admin/config/media/compressor_css_js/choose_files'] = array(
+      'title' => 'Choose files to use with compressor of css and js files',
+      'page callback' => 'drupal_get_form',
+      'page arguments' => array('compressor_css_js_domain_form_choose_files'),
+      'access arguments' => array('administer users'),
+      'type' => MENU_NORMAL_ITEM,
+    );
+
+  $items['admin/config/media/compressor_css_js/choose_files/processing_request'] = array(
+      'title' => 'Processing request',
+      'page callback' => 'drupal_get_form',
+      'page arguments' => array('compressor_css_js_domain_form_choose_files_processing_request'),
+      'access arguments' => array('administer users'),
+      'type' => MENU_NORMAL_ITEM,
+  );
+
+  $items['admin/config/media/compressor_css_js/config_files'] = array(
+      'title' => 'Configure previous compressed files',
+      'page callback' => 'drupal_get_form',
+      'page arguments' => array('compressor_css_js_domain_form_config_files'),
+      'access arguments' => array('administer users'),
+      'type' => MENU_NORMAL_ITEM,
+  );
+
+$items['admin/config/media/compressor_css_js/config_files/processed'] = array(
+      'title' => 'Results from configurations',
+      'page callback' => 'drupal_get_form',
+      'page arguments' => array('compressor_css_js_domain_form_config_files_results'),
+      'access arguments' => array('administer users'),
+      'type' => MENU_NORMAL_ITEM,
+  );
+
+	return $items;
+}
+
+#function to create a form with the different domains in the drupal instance.
+function compressor_css_js_domain_form($form, &$form_state){
+
+  #http://api.drupalhelp.net/api/domain/domain.module/7.3
+  #All active domains.
+  $all_domains = domain_domains();
+
+  #Create array with domain_id => subdomain values.
+  foreach ($all_domains as $domain) {
+    $array_domains[$domain["domain_id"]] = $domain["subdomain"];
+  }
+
+  #The default domain will be the current domain
+  $default_domain = domain_get_domain()["domain_id"];
+
+  #Dropdown with domains in this drupal instance
+    $form['selected'] = array(
+       '#name' => 'domain_name',
+       '#type' => 'select',
+       '#title' => t('Domain to use with compress_css_js module'),
+       '#options' => $array_domains,
+       '#default_value' => $default_domain,
+       '#description' => t('Select the domain.'),
+    );
+
+    /**********************************************************
+     C U R R E N T    C O M P R E S S E D    F I L E S
+    echo '<br/><br/><br/>->';
+    $query = db_select('compressor_css_js_files', 'v');
+    $query->fields('v');
+    $result = $query->execute();
+    //var_dump($result);
+    while($record = $result->fetchAssoc()) {
+      print_r($record);
+      echo '<br/>';
+    }
+    
+    echo '<-<br/><br/><br/>';
+    ************************************************************
+    */
+	#Continue button
+	$form['submit_button'] = array(
+    	'#type' => 'submit',
+    	'#value' => t('Continue'),
+      '#executes_submit_callback' => TRUE,
+      '#submit' => array('compressor_css_js_go_select'), #this send to the next step
+  	);
+  return $form;
+}
+
+function compressor_css_js_domain_form_config_files($form, &$form_state){
+   $domain_machine_name = domain_machine_name_load(domain_load_machine_name(variable_get("compressor_css_js_selected_domain")))["subdomain"];
+    $form['label_selected_domain'] = array(
+    '#markup' => 'Selected domain: <b><i>'.$domain_machine_name.'</i></b><br/>'
+  );
+
+  $id_domain = domain_machine_name_load(domain_load_machine_name(variable_get("compressor_css_js_selected_domain")))["domain_id"];
+
+
+  //$type1 = 0;//means we need to look up for CSS value in the DB.
+  $query = db_select('compressor_css_js_files', 'v');
+  $query->fields('v')
+        ->condition('filedomcode', $id_domain);
+        //->condition('type', $type1);
+        //->condition('unico', $single);
+  $resultCss = $query->execute();
+
+  $form['table_css_open'] = array(
+    '#type' => 'markup',
+    #'#title' => t('Compressed Css files'),
+    '#prefix' => '<table>
+    <tr>
+      <th>File name</th>
+      <th>Sources</th>
+      <th>Type</th>
+      <th>Last update</th>
+      <th>Compressing period (in hours)</th>
+    </tr>',
+    '#suffix' => '</table>',
+  );
+
+  $opciones = array(-1=> "Compress now", 168=>"Once a week",72=>"Every three days",48=>"Every two days", 24=>"Ones a day", 12=>"Twice a day", 0=>"Delete file");
+
+  while($record = $resultCss->fetchAssoc()) {
+    $nombre =$record["name"];
+    $recursos = $record["recursos"];  
+    $last = $record["updated_at"];
+    $type = "Css";
+    if($record["type"]==1){
+      $type = "Js";
+    }
+    $form['table_css_open'][$record["id"]] = array(
+      '#type' => 'select',
+      '#prefix' => "<tr><td>$nombre"."</td><td>"."$recursos"."</td><td>".$type."</td><td>".$last."</td><td>",
+      '#suffix' => '</td>',
+      '#options' => $opciones,
+      '#default_value' => $record["update_time"],
+    );
+  }
+
+   $form['submit_button'] = array(
+      '#type' => 'submit',
+      '#value' => t('Continue'),
+      '#executes_submit_callback' => TRUE,
+      '#submit' => array('compressor_css_js_go_config'), 
+    );
+
+    return $form;
+}
+
+function compressor_css_js_domain_form_config_files_results($form, &$form_state){
+
+  $form['submit_button'] = array(
+      '#type' => 'submit',
+      '#value' => t('Finished'),
+      '#executes_submit_callback' => TRUE,
+      '#submit' => array('compressor_css_js_finish'), 
+    );
+
+  $selected = variable_get("compressor_css_js_configurations_updates");
+
+  foreach ($selected as $key => $value) {
+    if(is_array($value) && is_numeric($key)){
+      $domains_to_update[] = $key;
+    }
+  }
+  //var_dump($domains_to_update);
+  $selected_inputs = variable_get("compressor_css_js_configurations_updates_input");
+  //var_dump($selected_inputs);
+
+  for ($i=0; $i < sizeof($domains_to_update); $i++) { 
+    //echo 'El archivo con identificador: '.$domains_to_update[$i].'<br/>';
+    //echo ' actualizará la hora en la que se realiza la compresion cada';
+    //echo $selected_inputs[$domains_to_update[$i]];
+    //echo 'horas';
+    //echo '<br/>';
+
+    if($selected_inputs[$domains_to_update[$i]]==-1){//wants to update now
+      //need to compress right now
+      $query = db_select('compressor_css_js_files', 'v');
+      $query->fields('v')
+            ->condition('id', $domains_to_update[$i]);//id from row
+      $result = $query->execute();
+
+      while($record = $result->fetchAssoc()) {
+        //$record["filepath"], $record["name"], $record["type"], $record["filedomcode"], $record["recursos"]
+        $directory = $record["filepath"];
+        $filename = $record["name"];
+        $type = $record["type"];
+        $domainc = $record["filedomcode"];
+        $sourcecode = $record["recursos"];
+        $r = compressAgain($directory, $filename, $type, $domainc,$sourcecode);
+        //echo '<br/>Fin de haber entrado a la compresion inmediata';
+      }
+
+    }else{
+      //($idRegister,$timefile)
+      $r = updateTimeFromFile($domains_to_update[$i],$selected_inputs[$domains_to_update[$i]]);
+    }
+
+  } 
+
+    return $form;
+}
+
+function compressor_css_js_domain_form_choose_files($form, &$form_state){
+  
+  $domain_machine_name = domain_machine_name_load(domain_load_machine_name(variable_get("compressor_css_js_selected_domain")))["subdomain"];
+  $domain_theme_name = getDomainThemeName()  ;
+  $available_files = getAvailablesFiles();
+  $available_css = $available_files[0];
+  $available_js = $available_files[1];
+
+  $form['label_selected_domain'] = array(
+    '#markup' => 'Selected domain: <b><i>'.$domain_machine_name.'</i></b><br/>'
+  );
+
+  $form['label_selected_domain_theme'] = array(
+    '#markup' => 'Theme from selected domain: <b><i>'.$domain_theme_name.'</i></b><br/>'
+  );
+
+
+
+
+$id_domain = domain_machine_name_load(domain_load_machine_name(variable_get("compressor_css_js_selected_domain")))["domain_id"];
+$query = db_select('compressor_css_js_files', 'v');
+$query->fields('v')
+        ->condition('filedomcode', $id_domain);
+$query->countQuery();
+$num_rows = $query->countQuery()->execute()->fetchField();
+
+if($num_rows>0){
+  $form['config_button'] = array(
+      '#type' => 'submit',
+      '#value' => t('Configure the previous compressed files'),
+      '#executes_submit_callback' => TRUE,
+      '#submit' => array('compressor_css_js_config_files'), 
+    );
+}
+
+  $form['files_chooser_css'] =array(
+    '#name' => 'array_css_choosen',
+    '#type' => 'select', 
+    '#title' => 'Select the css files to compress',
+    #'#default_value' => $value, 
+    '#options' => $available_css, 
+    #'#description' => $description, 
+    '#multiple' => true, 
+    '#size' => true ? min(0, count($available_css)) : 0,
+    #'#weight' => -15,
+  );
+
+  $form['files_chooser_css_split'] =array(
+    '#name' => 'array_css_choosen_split',
+    '#type' => 'checkbox', 
+    '#title' => '<b>Create a compressed file for each css file selected.</b>',
+  );
+
+  $form['files_chooser_js'] =array(
+    '#name' => 'array_js_choosen',
+    '#type' => 'select', 
+    '#title' => 'Select the js files to compress',
+    #'#default_value' => $value, 
+    '#options' => $available_js, 
+    #'#description' => $description, 
+    '#multiple' => true, 
+    '#size' => true ? min(0, count($available_js)) : 0,
+    #'#weight' => -15,
+  );
+
+  $form['files_chooser_js_split'] =array(
+    '#name' => 'array_js_choosen_split',
+    '#type' => 'checkbox', 
+    '#title' => '<b>Create a compressed file for each js file selected.</b>',
+  );
+
+  compressor_css_js_set_availables_files($available_css,$available_js);
+
+  $form['submit_button'] = array(
+      '#type' => 'submit',
+      '#value' => t('Continue'),
+      '#executes_submit_callback' => TRUE,
+      '#submit' => array('compressor_css_js_go_processing'), 
+    );
+
+  return $form;
+}
+
+function compressor_css_js_domain_form_choose_files_processing_request($form, &$form_state){
+  #availables files to use with compressor
+  $available_css = variable_get("compressor_css_js_availables_css_files");
+  $available_js = variable_get("compressor_css_js_availables_js_files");
+  #selected files in previous form (if there are no files selecte value is null)
+  $selected_css = variable_get("compressor_css_js_selected_css_files");
+  $selected_js = variable_get("compressor_css_js_selected_js_files");
+  #choosen css files to compress
+
+  #if there were no choosen files, it redirects to itself (choose_files)
+  if($selected_css== null and $selected_js == null){
+    drupal_goto('admin/config/media/compressor_css_js/choose_files');
+    die;
+  }
+
+  require_once('Compressormath.php');
+  $domain_machine_name = domain_machine_name_load(domain_load_machine_name(variable_get("compressor_css_js_selected_domain")))["subdomain"];
+  $domain_theme_name = getDomainThemeName()  ;
+
+  #choosen css files to compress
+  if($selected_css!= null){
+    /*$selected_css_size = sizeof($selected_css);*/
+    //$urlCssFiles = $domain_machine_name. '/sites/all/themes/'.$domain_theme_name;
+    $urlCssFiles = $domain_machine_name. '/sites/all/themes/'.$domain_theme_name;
+    $urlCss = $urlCssFiles.'/css/';
+    //directory path to get files content
+    $directory = './sites/all/themes/'.$domain_theme_name;
+    $directory = $directory.'/css/';
+    //variable to know if compression is required for each selected element and create multiple files
+    $css_split_file = variable_get("compressor_css_js_compression_options_css_files");
+
+    //var_dump($css_split_file);
+    $labelCss = "";
+  
+    $cssStatus = false;
+
+    if($css_split_file or sizeof($selected_css)<2){
+      $compressorClass = new Minifymulliecss();
+      //compressing each file on the array
+      for ($i=0; $i < sizeof($selected_css) ; $i++) { 
+        if ($stream = fopen($directory.$available_css[$selected_css[$i]], 'r')) {
+          $css =  stream_get_contents($stream, -1, 0);
+          fclose($stream);
+        }
+        $compressorClass->addFile($css);  
+        $res = $compressorClass->minify();
+        $cssStatus = writeInFile($directory,'compressor-for-css-js-'.$available_css[$selected_css[$i]],$res);
+        if($cssStatus!=false){
+          $labelCss = $labelCss."The file <b>".$available_css[$selected_css[$i]]."</b> was successfully compressed."."\n";
+          /*
+          * En caso de que la compresion haya sido exitosa, se inserta el elemento
+          * en la base de datos, en caso de que no exista.
+          * 
+          * En caso de que exista se actualiza la informacion de cuando se hizo.
+          *
+          */
+          //id del dominio, nombre del archivo, 0 -> es css, 1 -> fue un único archivo,
+          //nombre orignal del archivo usado, ruta donde se guardo,
+          //tiempo en el que se quiere que se vuelva a correr la compresion
+          $id_dom = domain_machine_name_load(domain_load_machine_name(variable_get("compressor_css_js_selected_domain")))["domain_id"];
+          //var_dump($id_dom);
+  
+          if(existCompressionRegister((int)$id_dom,'compressor-for-css-js-'.$available_css[$selected_css[$i]],$available_css[$selected_css[$i]])){
+
+            //echo '<br/><br/><br/><p style="color:red;">El comprimido de '.$available_css[$selected_css[$i]].' ya existe</p><br/><br/><br/>';
+
+            //echo 'Haciendo la actualizacion';
+
+            $act = updateCompressionRegister((int)$id_dom,'compressor-for-css-js-'.$available_css[$selected_css[$i]],$available_css[$selected_css[$i]]);
+
+            //var_dump($act);
+
+            //echo '<br/><p style="color:green;">Fin de la actualizacion</p><br/>';
+            $labelCss = $labelCss .'(and the register was updated);';
+
+          }else{
+                //echo '<hr><br/>Insertar elemento<br/>';
+                $res_query = createCompressionRegister((int)$id_dom,'compressor-for-css-js-'.$available_css[$selected_css[$i]],0,1,$available_css[$selected_css[$i]],$directory,24);
+                //var_dump($res_query);
+                //echo '<br/><br/>fin<hr>';
+                $labelCss = $labelCss .'(and the register was created);';
+          }
+
+        }else{
+          $labelCss = $labelCss.'The file <b>'.$available_css[$selected_css[$i]].'</b> was <b><span style="color:red;">not</span></b> successfully compressed.'."\n";
+        }
+        $compressorClass = new Minifymulliecss();
+      }
+    }else{
+      $names = "";
+      $compressorClass = new Minifymulliecss();
+      //compressing each file on the array
+      for ($i=0; $i < sizeof($selected_css) ; $i++) { 
+        if ($stream = fopen($directory.$available_css[$selected_css[$i]], 'r')) {
+          $css =  stream_get_contents($stream, -1, 0);
+          fclose($stream);
+          $names = $names.$available_css[$selected_css[$i]].',';
+        }
+        $compressorClass->addFile($css."\n");      
+      }
+      $res = $compressorClass->minify();
+      //echo '<br/><br/><br/><hr/> Result for multiple files selected and compressed in a unique file<br/><br/><br/>';
+      //echo $res;
+      $id_dom = domain_machine_name_load(domain_load_machine_name(variable_get("compressor_css_js_selected_domain")))["domain_id"];
+
+      if(existMultiCompressionRegister((int)$id_dom, $names)){
+        //tomamos el nombre del archivo y sobreescribimos
+        $previous_label = getMultiCompressionRegister((int)$id_dom, $names);
+        //comprimimos y guardamos nueva hora en la base de datos
+        $cssStatus = writeInFile($directory,$previous_label,$res."\n//files compressed:".$names);
+        if($cssStatus!=false){//verificar que los archivos hayan sido comprimidos
+          $labelCss = 'The files <span style="color:green;"><b>'.$names."</b></span> were successfully compressed and the <b>update_time was updated</b>."."\n";
+          //guardamos en la base de datos
+          //echo 'Haciendo la actualizacion del archivo de muchos';
+          $act = updateCompressionRegister((int)$id_dom,$previous_label,$names);
+          //var_dump($act);
+          //echo '<br/><p style="color:green;">Fin de la actualizacion de muchos</p><br/>';
+        }else{
+          $labelCss = "The files were <b>not</b> successfully compressed."."\n";
+        }
+
+      }else{
+        //tomamos el siguiente nombre y generamos el archivo
+        $new_label = nextAvailableName($directory);
+        $cssStatus = writeInFile($directory,'compressor-for-css-js-'.$new_label,$res."\n//files compressed:".$names);
+
+        if($cssStatus!=false){//verificar que los archivos hayan sido comprimidos
+          $labelCss = 'The files <span style="color:green;"><b>'.$names.'</b></span> were successfully compressed.'."\n";
+          //guardamos en la base de datos
+          //echo '<hr><br/>Insertar elemento de multiarchivos<br/>';
+          $res_query = createCompressionRegister((int)$id_dom,'compressor-for-css-js-'.$new_label,0,0,$names,$directory,24);
+          //var_dump($res_query);
+          //echo '<br/><br/>fin<hr>';
+        }else{
+          $labelCss = "The files were <b>not</b> successfully compressed."."\n";
+        }
+      }
+    }
+
+  }else{
+    $labelCss = "You did not select css files to compress.";
+  }
+
+  #choosen js files to compress
+  if($selected_js!= null){
+    
+    $urlCssFiles = $domain_machine_name. '/sites/all/themes/'.$domain_theme_name;
+    $urlCss = $urlCssFiles.'/js/';
+    //directory path to get files content
+    $directory = './sites/all/themes/'.$domain_theme_name;
+    $directory = $directory.'/js/';
+    //variable to know if compression is required for each selected element and create multiple files
+    $js_split_file = variable_get("compressor_css_js_compression_options_js_files");
+
+    //var_dump($css_split_file);
+    $labelJs = "";
+  
+    $jsStatus = false;
+
+    if($js_split_file or sizeof($selected_js)<2){
+      $compressorClass = new Minifymulliejs();
+      //compressing each file on the array
+      for ($i=0; $i < sizeof($selected_js) ; $i++) { 
+        if ($stream = fopen($directory.$available_js[$selected_js[$i]], 'r')) {
+          $js =  stream_get_contents($stream, -1, 0);
+          fclose($stream);
+        }
+        $compressorClass->addFile($js);  
+        $res = $compressorClass->minify();
+        //echo '<br/><br/><br/><hr/> Result for single file selected <b>JS</b> ('.$i.')<br/><br/><br/>';
+        //echo $res;
+        $jsStatus = writeInFile($directory,'compressor-for-css-js-'.$available_js[$selected_js[$i]],$res);
+
+
+        if($jsStatus!=false){
+          $labelJs = $labelJs."The file <b>".$available_js[$selected_js[$i]]."</b> was successfully compressed."."\n";
+          $id_dom = domain_machine_name_load(domain_load_machine_name(variable_get("compressor_css_js_selected_domain")))["domain_id"];
+          if(existCompressionRegister((int)$id_dom,'compressor-for-css-js-'.$available_js[$selected_js[$i]],$available_js[$selected_js[$i]])){
+            $act = updateCompressionRegister((int)$id_dom,'compressor-for-css-js-'.$available_js[$selected_js[$i]],$available_js[$selected_js[$i]]);
+            $labelJs = $labelJs .'(and the register was updated);';
+          }else{
+                $res_query = createCompressionRegister((int)$id_dom,'compressor-for-css-js-'.$available_js[$selected_js[$i]],1,1,$available_js[$selected_js[$i]],$directory,24);
+                $labelJs = $labelJs .'(and the register was created);';
+          }
+        }else{
+          $labelJs = $labelJs.'The file <b>'.$available_js[$selected_js[$i]].'</b> was <b><span style="color:red;">not</span></b> successfully compressed.'."\n";
+        }
+
+        $compressorClass = new Minifymulliejs();
+      }
+      
+    }else{
+
+      $names = "";
+      $compressorClass = new Minifymulliejs();
+      //compressing each file on the array
+      for ($i=0; $i < sizeof($selected_js) ; $i++) { 
+        if ($stream = fopen($directory.$available_js[$selected_js[$i]], 'r')) {
+          $js =  stream_get_contents($stream, -1, 0);
+          fclose($stream);
+          $names = $names.$available_js[$selected_js[$i]].',';
+        }
+        $compressorClass->addFile($js."\n");      
+      }
+      $res = $compressorClass->minify();
+      //echo '<br/><br/><br/><hr/> Result for multiple files selected and compressed in a unique file<br/><br/><br/>';
+      //echo $res;
+      $id_dom = domain_machine_name_load(domain_load_machine_name(variable_get("compressor_css_js_selected_domain")))["domain_id"];
+
+      if(existMultiCompressionRegister((int)$id_dom, $names)){
+        //tomamos el nombre del archivo y sobreescribimos
+        $previous_label = getMultiCompressionRegister((int)$id_dom, $names);
+        //comprimimos y guardamos nueva hora en la base de datos
+        $jsStatus = writeInFile($directory,$previous_label,$res."\n//files compressed:".$names);
+        if($jsStatus!=false){//verificar que los archivos hayan sido comprimidos
+          $labelJs = 'The files <span style="color:green;"><b>'.$names."</b></span> were successfully compressed and the <b>update_time was updated</b>."."\n";
+          //guardamos en la base de datos
+          //echo 'Haciendo la actualizacion del archivo de muchos';
+          $act = updateCompressionRegister((int)$id_dom,$previous_label,$names);
+          //var_dump($act);
+          //echo '<br/><p style="color:green;">Fin de la actualizacion de muchos</p><br/>';
+        }else{
+          $labelJs = "The files were <b>not</b> successfully compressed."."\n";
+        }
+
+      }else{
+        //tomamos el siguiente nombre y generamos el archivo
+        $new_label = nextAvailableNameJs($directory);
+        $jsStatus = writeInFile($directory,'compressor-for-css-js-'.$new_label,$res."\n//files compressed:".$names);
+
+        if($jsStatus!=false){//verificar que los archivos hayan sido comprimidos
+          $labelJs = 'The files <span style="color:green;"><b>'.$names.'</b></span> were successfully compressed.'."\n";
+          //guardamos en la base de datos
+          //echo '<hr><br/>Insertar elemento de multiarchivos<br/>';
+          $res_query = createCompressionRegister((int)$id_dom,'compressor-for-css-js-'.$new_label,1,0,$names,$directory,24);
+          //var_dump($res_query);
+          //echo '<br/><br/>fin<hr>';
+        }else{
+          $labelJs = "The files were <b>not</b> successfully compressed."."\n";
+        }
+
+      }
+  }
+
+  }else{
+    $labelJs = "You did not select js files to compress.";
+  }
+
+  $form['label_css_success'] = array(
+    '#markup' => $labelCss."<br/><br/>"
+  );
+
+  $form['label_js_success'] = array(
+    '#markup' => $labelJs."<br/><br/><br/>"
+  );
+
+  if($labelCss != "You did not select css files to compress." or $labelJs != "You did not select js files to compress."){
+
+    $form['label_dir_compressed_files'] = array(
+    '#markup' => "All files where stored inside the /theme/css/ or /theme/js/ directory."
+    );
+  }
+
+  $form['submit_button'] = array(
+      '#type' => 'submit',
+      '#value' => t('Ok'),
+      '#submit' => array('compressor_css_js_finish'), 
+    );
+    
+  return $form;
+}
+
+function startsWith ($string, $startString){ 
+    $len = strlen($startString); 
+    return (substr($string, 0, $len) === $startString); 
+} 
+
+function endsWith($string, $endString){ 
+    $len = strlen($endString); 
+    if ($len == 0) { 
+        return true; 
+    } 
+    return (substr($string, -$len) === $endString); 
+}
+
+function getDomainThemeName(){
+  #Selected domain id in the previous page
+  $selected_domain_id = variable_get("compressor_css_js_selected_domain");
+  #https://www.drupal.org/project/domain/issues/1718968
+  #Domain theme properties.
+  #array(4) { ["domain_id"]=> string(1) "1" ["theme"]=> string(7) "theme_name" ["settings"]=> string(0) "" ["status"]=> string(1) "1" }
+  $domain_theme_properties = domain_theme_lookup($selected_domain_id);
+  $domain_theme_name = $domain_theme_properties["theme"];
+  return $domain_theme_name;
+}
+
+function getAvailablesFiles(){
+  #Selected domain id in the previous page
+  $selected_domain_id = variable_get("compressor_css_js_selected_domain");
+  #Machine name of the domain
+  $domain_machine_name = domain_machine_name_load(domain_load_machine_name(variable_get("compressor_css_js_selected_domain")))["subdomain"];
+  #https://stackoverflow.com/questions/8405386/adding-text-just-text-to-a-form-in-drupal-7
+  #Label of the machine name of the selected domain
+
+  #https://www.drupal.org/project/domain/issues/1718968
+  #Domain theme properties.
+  #array(4) { ["domain_id"]=> string(1) "1" ["theme"]=> string(7) "theme_name" ["settings"]=> string(0) "" ["status"]=> string(1) "1" }
+  $domain_theme_properties = domain_theme_lookup($selected_domain_id);
+  $domain_theme_name = $domain_theme_properties["theme"];
+
+  #Global theme directory
+  $theme_directory = './sites/all/themes/'.$domain_theme_name.'/';
+  #Css and Js directories from theme
+  $theme_css_directory = $theme_directory.'css';
+  $theme_js_directory = $theme_directory.'js';
+  #Files located on theme css and theme js paths
+  $directory_css = scandir($theme_css_directory);
+
+  $directory_js = scandir($theme_js_directory);
+  #File info path from theme
+  $theme_info_file = $theme_directory .''.$domain_theme_name.'.info';
+  #Reading info file to get possible css and js files
+  $file = fopen($theme_info_file, "r") or exit("Unable to open file!");
+  $line = '';
+  #Arrays with css and js from theme.info file
+  $info_css = array();
+  $info_js = array();
+  #Cleaning info file
+  while(!feof($file)){
+      $line = str_replace(' ', '', fgets($file));
+      $line = str_replace("'", '', $line);
+      #only read available Css and Js files
+      if(startsWith($line,"stylesheets[all][]") ) {
+        $line = substr($line, 23);
+        $line = trim($line);
+        $info_css[] = $line;
+      }elseif (startsWith($line,"scripts[]")) {
+        $line = substr($line, 13);
+        $line = trim($line);
+        $info_js[] = $line;
+      }    
+    }
+  fclose($file);
+
+  #var_dump(true);
+
+  #Check available files to compress
+  #$info_css / $info_js
+  #$directory_css / $directory_js
+  $available_css = array();
+  $available_js = array();
+  #verify available css files
+  foreach ($info_css as  $value ) {
+    if(in_array($value, $directory_css)){
+      $available_css[] = $value;
+    }
+  }
+  #verify available js files
+  foreach ($info_js as $value ) {
+    if(in_array($value, $directory_js)){
+      $available_js[] = $value;
+    }
+  }
+
+  $res= array();
+  $res[] = $available_css;
+  $res[] = $available_js;
+
+  return $res;
+}
+
+function writeInFile($path,$name,$content){
+  // Open the file to get existing content
+  //$current = file_get_contents($path.$name);
+  // Write the contents back to the file
+  //file_put_contents($path.$name, $content);
+  $handle = fopen($path.$name, "w");
+  $result = fwrite($handle, $content);
+  fclose($handle);
+  return $result;
+}
+
+##---------------------------------------------------------------------
+#In the middle function between domain and file selection
+function compressor_css_js_go_select($form,&$form_state){
+  #This helps to set input variables
+  compressor_css_js_set_variables($form_state['input']['domain_name']);
+  #Redirecting to next step
+  drupal_goto('admin/config/media/compressor_css_js/choose_files');
+}
+function compressor_css_js_set_variables($domain){
+  #here domain_id is kept in a variable,
+  variable_set("compressor_css_js_selected_domain",$domain);
+}
+
+function compressor_css_js_go_config($form,&$form_state){
+  variable_set("compressor_css_js_configurations_updates",$form["table_css_open"]);
+  variable_set("compressor_css_js_configurations_updates_input",$form_state["input"]);
+
+  drupal_goto('admin/config/media/compressor_css_js/config_files/processed');
+}
+
+##---------------------------------------------------------------------
+##---------------------------------------------------------------------
+#In the middle function between file selection and files compression
+function compressor_css_js_go_processing($form,&$form_state){
+
+  $css = null;
+  $js = null;
+
+  $cssbool = false;
+  $jsbool = false;
+
+  if(isset($form_state['input']['array_css_choosen'])){
+    $css = $form_state['input']['array_css_choosen'];
+  }
+  if(isset($form_state['input']['array_js_choosen'])){
+    $js = $form_state['input']['array_js_choosen'];
+  }
+
+  //to know if we want a compression for each selected file
+  if(isset($form_state['input']['array_css_choosen_split'])){
+    $cssbool = $form_state['input']['array_css_choosen_split'] == 1;
+  }
+  if(isset($form_state['input']['array_js_choosen_split'])){
+    $jsbool = $form_state['input']['array_js_choosen_split'] == 1;
+  }
+
+  compressor_css_js_set_variables_files($css,$js);
+
+  compressor_css_js_set_compression_files_options($cssbool, $jsbool);
+  #Redirecting to next step
+  drupal_goto('admin/config/media/compressor_css_js/choose_files/processing_request');
+}
+
+function compressor_css_js_config_files($form,&$form_state){
+  drupal_goto('admin/config/media/compressor_css_js/config_files');
+}
+
+function compressor_css_js_finish($form,&$form_state){
+  drupal_goto('admin/config/media/compressor_css_js');
+}
+
+function compressor_css_js_set_availables_files($css_array,$js_array){
+  if(sizeof($css_array)>0){
+    variable_set("compressor_css_js_availables_css_files",$css_array);
+  }else{
+    variable_set("compressor_css_js_availables_css_files",null);
+  }
+
+  if(sizeof($js_array)>0){
+    variable_set("compressor_css_js_availables_js_files",$js_array);
+  }else{
+    variable_set("compressor_css_js_availables_js_files",null);
+  }
+}
+
+function compressor_css_js_set_variables_files($css_array, $js_array){
+  #here css_array and js_array are kept in variables,
+  variable_set("compressor_css_js_selected_css_files",$css_array);
+  variable_set("compressor_css_js_selected_js_files",$js_array);
+}
+
+function compressor_css_js_set_compression_files_options($cssboolean, $jsboolean){
+  variable_set("compressor_css_js_compression_options_css_files",$cssboolean);
+  variable_set("compressor_css_js_compression_options_js_files",$jsboolean);
+}
+
+function existMultiCompressionRegister($domainc,$sourcecode){
+  $res = false;
+
+  $query = db_select('compressor_css_js_files', 'v');
+  $query->fields('v')
+        ->condition('filedomcode', $domainc)
+       // ->condition('name', $namei)
+        ->condition('recursos', $sourcecode);
+  $result = $query->execute();
+
+  while($record = $result->fetchAssoc()) {
+      $res = true;
+    }
+
+  return $res;
+}
+
+function getMultiCompressionRegister($domainc,$sourcecode){
+  $res = false;
+
+  $query = db_select('compressor_css_js_files', 'v');
+  $query->fields('v')
+        ->condition('filedomcode', $domainc)
+       // ->condition('name', $namei)
+        ->condition('recursos', $sourcecode);
+  $result = $query->execute();
+
+  while($record = $result->fetchAssoc()) {
+      $res = $record["name"];
+    }
+
+  return $res;
+}
+
+function existCompressionRegister($domainc,$namei,$sourcecode){
+  $res = false;
+
+  $query = db_select('compressor_css_js_files', 'v');
+  $query->fields('v')
+        ->condition('filedomcode', $domainc)
+        ->condition('name', $namei)
+        ->condition('recursos', $sourcecode);
+  $result = $query->execute();
+
+  while($record = $result->fetchAssoc()) {
+      $res = true;
+    }
+
+  return $res;
+}
+
+function updateTimeFromFile($idRegister,$timefile){
+  $res = "";
+  if($timefile==0){
+    //we need to delete file
+    $query = db_select('compressor_css_js_files', 'v');
+    $query->fields('v')
+        ->condition('id', $idRegister);
+    $result = $query->execute();
+    while($record = $result->fetchAssoc()) {
+      //var_dump($record);
+      //echo '**<br/>';
+      $domainId = $record["filedomcode"];
+      $filename = $record["name"];
+      $directory1 = $record["filepath"];
+      $res = deleteCompressionRegisterAndFile($domainId, $filename, $directory1);
+    }
+
+  }else{
+    //we need to update file
+    $res = db_update('compressor_css_js_files')
+       ->fields(array(
+          "update_time" => $timefile,
+        ))
+        ->condition('id', $idRegister)
+    ->execute();
+  }
+  return $res;
+}
+
+function updateCompressionRegister($domainc,$namei,$sourcecode){
+
+  $res = db_update('compressor_css_js_files')
+       ->fields(array(
+          "updated_at" => date('Y-m-d H:i:s'),
+        ))
+        ->condition('filedomcode', $domainc)
+        ->condition('name', $namei)
+        ->condition('recursos', $sourcecode)
+  ->execute();
+
+  return $res;
+}
+
+#https://api.drupal.org/api/drupal/includes!database!database.inc/function/db_insert/7.x
+/*
+ * @params: domain,name,type,single,source,path,update_time,updated_at
+ */
+function createCompressionRegister($domain,$name,$type,$single,$source,$pathI,$update_time){
+
+    $p = array("filedomcode" => $domain,"name" => $name,"type" => $type,"unico" => $single,"recursos" => $source,"filepath" => $pathI,"update_time" => $update_time,"updated_at" => date('Y-m-d H:i:s'));
+
+    //$result_query = db_insert('compressor_css_js_files')->fields($p)->execute();
+    
+
+    //echo 'en el metodo createCompressionRegister';
+    $result_query = drupal_write_record('compressor_css_js_files', $p);
+    //echo '<br/><br/><br/>';
+    //var_dump($result_query);
+    //echo '<br/><br/><br/>';
+    //echo 'despues del metodo createCompressionRegister';
+    
+  return $result_query;
+}
+
+function deleteCompressionRegisterAndFile($domainId, $filename, $directory1){
+
+  $res_query = db_delete('compressor_css_js_files')
+  ->condition('filedomcode', $domainId)
+  ->condition('name', $filename)
+  ->execute();
+
+  echo '<br/><br/><p> The file '.$filename.' <b>was deleted</b> from the DB.</p>';
+
+  $dropped = unlink($directory1.$filename);
+  if($dropped){
+    echo '<br/><br/><p> The file '.$filename.' <b>was deleted</b> from the system.</p>';
+  }else{
+    echo '<br/><br/><p> The file '.$filename.' <b>was NOT deleted</b> from the DB.</p>';
+  }
+
+  return $res_query;
+}
+
+#https://www.drupal.org/docs/7/api/database-api/dynamic-queries/introduction-to-dynamic-queries
+function selectAllCompressedFiles(){
+  $query = db_select('compressor_css_js_files', 'c');
+  return $query->execute();
+}
+
+function nextAvailableName($directory1){
+  $listo = false;
+  $cont = 0;
+  $label = 'multiple-files.css';
+  while(!$listo){
+    if($cont==0){
+      if(!file_exists($directory1.'compressor-for-css-js-multiple-files.css')){
+        $listo = true;
+      }
+    }else{
+      if(!file_exists($directory1.'compressor-for-css-js-multiple-files'.$cont.'.css')){
+        $listo = true;
+        $label = 'multiple-files'.$cont.'.css';
+      }
+    }
+    $cont +=1;
+  }
+  return $label;
+}
+
+function nextAvailableNameJs($directory1){
+  $listo = false;
+  $cont = 0;
+  $label = 'multiple-files.js';
+  while(!$listo){
+    if($cont==0){
+      if(!file_exists($directory1.'compressor-for-css-js-multiple-files.css')){
+        $listo = true;
+      }
+    }else{
+      if(!file_exists($directory1.'compressor-for-css-js-multiple-files'.$cont.'.css')){
+        $listo = true;
+        $label = 'multiple-files'.$cont.'.js';
+      }
+    }
+    $cont +=1;
+  }
+  return $label;
+}
+
+function compressor_css_js_process_html(&$variables){
+
+/**********************************************************
+*   T H I S   S E C T I O N   I S   F O R    C S S
+***********************************************************/
+
+  //https://drupal.stackexchange.com/questions/29732/how-to-remove-a-stylesheet-provided-by-a-contrib-module
+  //unset($css['sites/all/themes/coursat/css/custom.css']);
+  $id_domain = domain_get_domain()["domain_id"];
+  $type1 = 0;//means we need to look up for that value in the DB.
+  //$single = 1;
+  //for single files
+  $query = db_select('compressor_css_js_files', 'v');
+  $query->fields('v')
+        ->condition('filedomcode', $id_domain)
+        ->condition('type', $type1);
+        //->condition('unico', $single);
+  $result = $query->execute();
+
+  while($record = $result->fetchAssoc()) {
+    //echo '<br/>Archivo unico encontrado:<br/>';
+    $sources1 = $record["recursos"];
+    $path1 = substr($record["filepath"], 2);
+    $name1 = $record["name"];
+
+    $var = $path1.$name1;
+    $res = drupal_add_css($var);  
+    $variables["css"] = $res;
+    if($record["unico"]==1){
+      unset($variables["css"][$path1.$sources1]);
+    }else{
+      $sources1=explode(",", $sources1);
+      foreach ($sources1 as $key => $value) {
+        //var_dump($value);
+        //echo'<br/>';
+        unset($variables["css"][$path1.$value]);
+      }
+    }   
+  }
+
+  /**********************************************************
+  *   T H I S   S E C T I O N   I S   F O R    J S
+  ***********************************************************/
+
+  $type1 = 1;//means we need to look up for JS value in the DB.
+  $query = db_select('compressor_css_js_files', 'v');
+  $query->fields('v')
+        ->condition('filedomcode', $id_domain)
+        ->condition('type', $type1);
+        //->condition('unico', $single);
+  $result = $query->execute();
+
+  $r = $variables["scripts"];
+
+  while($record = $result->fetchAssoc()) {
+    
+    $sources1 = $record["recursos"];
+    $path1 = substr($record["filepath"], 2);
+    $name1 = $record["name"];
+    $var = $path1.$name1;  
+    if($record["unico"]==1){
+      //unset($variables["js"][$path1.$sources1]);
+      //echo 'tratando de hacer el remplazo <br/>';
+      $x = $path1.$sources1;
+      //echo 'de '.$x.' por '.$var;
+      $r =str_replace($x, $var, $variables["scripts"]);
+
+    }else{
+      $sources1=explode(",", $sources1);
+      $contador = 0;
+
+      foreach ($sources1 as $key => $value) {    
+      $x = $path1.$value;   
+        if($contador<1){
+          //echo 'tratando de hacer el remplazo <br/>';
+          //echo 'de '.$x.' por '.$var;
+          $r =str_replace($x, $var, $variables["scripts"]);
+          //echo 'fin del intento';
+          $contador = $contador + 1;
+        }else{
+          if($value!=""){
+            $r =str_replace($x, "", $r);
+          }                 
+
+        }
+      }
+
+    }   
+    $variables["scripts"] = $r;
+  }
+}
+
+//cron to be used periodically to recompress files
+function compressor_css_js_cron(){
+  //get every compress register
+  $query = db_select('compressor_css_js_files', 'v');
+  $query->fields('v');
+  $result = $query->execute();
+  while($record = $result->fetchAssoc()) {
+    //checar el tiempo y hacer la diferencia... si es menor a 30 min que lo corra
+    //https://www.geeksforgeeks.org/how-to-calculate-the-difference-between-two-dates-in-php/
+    $date1 = $record['updated_at'];  
+    $date2 = date('Y-m-d H:i:s');  
+    /*$diff = abs($date2 - $date1);  
+    // To get the year divide the resultant date into 
+    // total seconds in a year (365*60*60*24) 
+    $years = floor($diff / (365*60*60*24));  
+      
+    // To get the month, subtract it with years and 
+    // divide the resultant date into 
+    // total seconds in a month (30*60*60*24) 
+    $months = floor(($diff - $years * 365*60*60*24) 
+                                   / (30*60*60*24));  
+      
+    // To get the day, subtract it with years and  
+    // months and divide the resultant date into 
+    // total seconds in a days (60*60*24) 
+    $days = floor(($diff - $years * 365*60*60*24 -  
+                 $months*30*60*60*24)/ (60*60*24)); 
+      
+    // To get the hour, subtract it with years,  
+    // months & seconds and divide the resultant 
+    // date into total seconds in a hours (60*60) 
+    $hours = floor(($diff - $years * 365*60*60*24  
+           - $months*30*60*60*24 - $days*60*60*24) 
+                                       / (60*60)); */
+
+    $date1 = $record['updated_at'];  
+    $date2 = date('Y-m-d H:i:s');  
+    $timestamp1 = strtotime($date1);
+    $timestamp2 = strtotime($date2);
+    $hours = abs($timestamp2 - $timestamp1)/(60*60);
+
+    /*
+    echo 'El archivo'.$record["name"].' se supone que se actualiza cada '.$record["update_time"].'<br/>';
+    echo 'La ultima hora de actualizacion fue: '.$record["updated_at"].'<br/>';
+    echo 'Las horas que han transcurrido son: '.$hours.'<br/>';
+    echo 'El resultado de la compresion es --> ';
+    */
+
+    if($hours>=$record["update_time"]){//tiempo es menor de lo que se esperaba
+      //$directory, $filename, $type, $domainc,$sourcecode
+      compressAgain($record["filepath"], $record["name"], $record["type"], $record["filedomcode"], $record["recursos"]);
+      /*echo '__ hizo compresion';*/
+    }else{
+      echo 'The file was compressed not a long time ago';
+    }
+  }
+}
+
+/*
+*
+* HACER LA COMPRESION EN UN METODO PARA PODER LLAMARLO INCLUSIVE EN LA
+  OPCION DE CONFIGURACION. DE TAL FORMA QUE SE PUEDA HACER UNA LLAMADA
+  QUE REALICE LA COMPRESION EN EL MOMENTO.
+*
+*
+*/
+function compressAgain($directory, $filename, $type, $domainc,$sourcecode){
+  require_once('Compressormath.php');
+  if($type==0){//css
+    $compressorClass = new Minifymulliecss();
+    //echo '<br/>Se inicia el compresor para css<br/>';
+  }else{//js
+    $compressorClass = new Minifymulliejs();
+    //echo '<br/>Se inicia el compresor para js<br/>';
+  }  
+  //obtener los valores
+  //aqui iniciar la compresion
+  $recursos = explode(",", $sourcecode);
+  //echo 'los recursos usados para la recompresion son: <br/>';
+  //var_dump($recursos);
+  //echo '<hr>';
+  foreach ($recursos as $key => $value) {
+    if($value!=""){
+        if ($stream = fopen($directory.$value, 'r')) {
+          $f =  stream_get_contents($stream, -1, 0);
+          //var_dump($f);
+          //echo '<hr><hr><hr><hr>';
+          fclose($stream);
+        }
+        //echo '<b>agregando archivo '.$value.'</b>';
+        $compressorClass->addFile($f);  
+    }
+  }
+  $res = $compressorClass->minify();
+
+  /** Overwriting the file was not working so i choosed to delete it
+   *
+   */
+  $dropped1 = unlink($directory.$filename);
+  if($dropped1){
+    //echo '<hr>Se borro el archivo para la recompresion';
+  }else{
+    //echo '<hr>No se borro el archivo';
+  }
+
+  $fileCompressedStatus = writeInFile($directory,$filename,$res);
+  if($fileCompressedStatus!=false){
+    //echo 'The file was successfully compressed -> '.$filename;
+    updateCompressionRegister($domainc,$filename,$sourcecode);
+  }else{
+    //echo 'The compression was not possible for : '.$filename;
+    //echo ' in: '.$directory;
+  }
+
+  //$fileCompressedStatus=0;
+  return $fileCompressedStatus;
+
+}
+
+function compressor_css_js_permission() {
+  return array(
+    'administer my module' => array(
+      'title' => t('Administer my module'),
+      'description' => t('Perform administration tasks for my module.'),
+    ),
+  );
+}
